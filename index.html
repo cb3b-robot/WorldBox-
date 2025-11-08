@@ -3,29 +3,28 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>WorldBox-Style World (Tile Prototype)</title>
+<title>WorldBox World — All Countries, Zoom & Humans</title>
+
+<!-- D3 + PapaParse (for map + CSV parsing) -->
+<script src="https://d3js.org/d3.v7.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
+
 <style>
   :root {
     --bg: #020617;
     --panel: #020617;
-    --panel2: #020617;
     --accent: #38bdf8;
-    --accent-soft: rgba(56,189,248,0.15);
+    --accent-soft: rgba(56,189,248,0.16);
     --muted: #9ca3af;
     --text: #e5e7eb;
-    --danger: #f97373;
   }
-  * {
-    box-sizing: border-box;
-  }
+  * { box-sizing:border-box; }
   html, body {
-    margin:0;
-    padding:0;
-    width:100%;
-    height:100%;
+    margin:0; padding:0;
+    width:100%; height:100%;
+    font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
     background: radial-gradient(circle at top,#0f172a 0%,#020617 55%);
-    color: var(--text);
-    font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    color:var(--text);
   }
   .page {
     display:flex;
@@ -35,103 +34,164 @@
     gap:8px;
   }
   @media (max-width: 900px) {
-    .page {
-      flex-direction:column;
-    }
+    .page { flex-direction:column; }
   }
   .left {
-    flex: 3;
-    background: radial-gradient(circle at top,#0b1220 0%,#020617 65%);
+    flex:3;
+    background: radial-gradient(circle at top,#0b1120 0%,#020617 70%);
     border-radius:10px;
     padding:10px;
     display:flex;
     flex-direction:column;
     gap:8px;
-    box-shadow:0 18px 40px rgba(0,0,0,0.55);
+    box-shadow:0 18px 40px rgba(0,0,0,0.6);
   }
   .right {
-    flex: 2;
+    flex:2;
     background: linear-gradient(180deg,#020617,#020617);
     border-radius:10px;
     padding:10px;
     display:flex;
     flex-direction:column;
     gap:10px;
-    box-shadow:0 18px 40px rgba(0,0,0,0.6);
+    box-shadow:0 18px 40px rgba(0,0,0,0.65);
   }
   header {
     display:flex;
     align-items:center;
-    gap:10px;
+    gap:8px;
   }
   header h1 {
     margin:0;
     font-size:18px;
     letter-spacing:0.03em;
   }
-  header span.badge {
+  .badge {
     font-size:11px;
     padding:2px 8px;
     border-radius:999px;
-    background:rgba(34,197,94,0.1);
-    color:#4ade80;
-    border:1px solid rgba(34,197,94,0.3);
+    border:1px solid rgba(56,189,248,0.6);
+    background:rgba(8,47,73,0.8);
+    color:#7dd3fc;
   }
-  header .sub {
+  .sub {
     margin-left:auto;
     font-size:12px;
     color:var(--muted);
   }
-  #mapContainer {
-    position:relative;
+  #mapWrap {
     flex:1;
     border-radius:8px;
     overflow:hidden;
+    position:relative;
     background: radial-gradient(circle at top,#0ea5e9,#0369a1 45%,#0f172a 100%);
     border:1px solid rgba(15,23,42,0.9);
   }
-  #worldCanvas {
+  svg#worldSvg {
     width:100%;
     height:100%;
     display:block;
+    touch-action:none; /* for D3 zoom on touch */
   }
-  .legend {
+  .overlay-note {
+    position:absolute;
+    left:8px; top:8px;
+    background:rgba(15,23,42,0.9);
+    padding:4px 8px;
+    border-radius:999px;
+    font-size:11px;
+    color:var(--muted);
+    border:1px solid rgba(148,163,184,0.35);
+  }
+  .bottom-bar {
     display:flex;
-    flex-wrap:wrap;
     gap:8px;
     align-items:center;
     margin-top:4px;
+    flex-wrap:wrap;
   }
   .pill {
     font-size:11px;
     padding:4px 8px;
     border-radius:999px;
     border:1px solid rgba(148,163,184,0.35);
+    background:rgba(15,23,42,0.9);
     color:#e5e7eb;
-    background:rgba(15,23,42,0.85);
   }
-  .controls {
+  #status {
+    margin-left:auto;
+    font-size:12px;
+    color:var(--muted);
+  }
+  .panel-title {
+    font-size:14px;
+    font-weight:600;
+  }
+  .small {
+    font-size:12px;
+    color:var(--muted);
+  }
+  .info-box {
+    background:rgba(15,23,42,0.95);
+    border-radius:8px;
+    padding:8px;
+    border:1px solid rgba(148,163,184,0.35);
+  }
+  .info-row {
     display:flex;
-    flex-wrap:wrap;
-    gap:6px;
-    margin-top:2px;
+    justify-content:space-between;
+    font-size:12px;
+    margin-top:4px;
+  }
+  .info-row span.label { color:var(--muted); }
+  .info-row span.value { font-weight:500; }
+  .bar-bg {
+    width:100%;
+    height:6px;
+    border-radius:999px;
+    background:rgba(15,23,42,0.9);
+    margin-top:6px;
+    overflow:hidden;
+    position:relative;
+  }
+  .bar-fill {
+    position:absolute;
+    left:0; top:0; bottom:0;
+    border-radius:999px;
+    background:linear-gradient(90deg,#22c55e,#38bdf8);
+    width:0%;
+  }
+  .color-dot {
+    width:14px;
+    height:14px;
+    border-radius:4px;
+    border:1px solid rgba(148,163,184,0.7);
+    margin-right:4px;
+  }
+  .human-slider {
+    display:flex;
+    flex-direction:column;
+    gap:4px;
+  }
+  input[type=range] {
+    width:100%;
   }
   button {
     border:none;
     border-radius:6px;
     padding:6px 10px;
+    font-size:12px;
+    font-weight:600;
+    cursor:pointer;
     background:var(--accent);
     color:#020617;
-    font-weight:600;
-    font-size:12px;
-    cursor:pointer;
     display:inline-flex;
     align-items:center;
     gap:4px;
     box-shadow:0 8px 22px rgba(56,189,248,0.35);
   }
   button.secondary {
-    background:rgba(15,23,42,0.9);
+    background:rgba(15,23,42,0.95);
     color:var(--muted);
     border:1px solid rgba(148,163,184,0.35);
     box-shadow:none;
@@ -140,52 +200,18 @@
     transform:translateY(1px);
     box-shadow:none;
   }
-  #status {
-    font-size:12px;
-    color:var(--muted);
-    margin-left:auto;
-  }
-
-  .panel-title {
-    font-size:14px;
-    font-weight:600;
-    margin-bottom:2px;
-  }
-  .small {
-    font-size:12px;
-    color:var(--muted);
-  }
-  .info-box {
-    background:rgba(15,23,42,0.9);
-    border-radius:8px;
-    padding:8px;
-    border:1px solid rgba(148,163,184,0.25);
-  }
-  .info-row {
-    display:flex;
-    justify-content:space-between;
-    gap:10px;
-    font-size:12px;
-    margin-top:3px;
-  }
-  .info-row span.label {
-    color:var(--muted);
-  }
-  .info-row span.value {
-    font-weight:500;
-  }
   .country-list {
     flex:1;
-    overflow:auto;
-    padding:6px;
     border-radius:8px;
+    padding:6px;
+    overflow:auto;
     background:radial-gradient(circle at top,#020617,#020617 60%);
     border:1px solid rgba(15,23,42,0.9);
   }
   .country-row {
     display:flex;
-    align-items:center;
     justify-content:space-between;
+    align-items:center;
     font-size:12px;
     padding:4px 6px;
     border-radius:6px;
@@ -195,49 +221,24 @@
   .country-row:hover {
     background:rgba(15,23,42,0.95);
   }
-  .country-row .color-dot {
-    width:10px;
-    height:10px;
-    border-radius:3px;
-    margin-right:6px;
+  .country-row.selected {
+    background:var(--accent-soft);
+    border:1px solid rgba(56,189,248,0.6);
   }
   .country-row-name {
     display:flex;
     align-items:center;
     gap:4px;
-    flex:1;
   }
   .country-row-pop {
     color:var(--muted);
     font-size:11px;
   }
-  .country-row.selected {
-    background:var(--accent-soft);
-    border:1px solid rgba(56,189,248,0.6);
-  }
-  .bar-bg {
-    position:relative;
-    width:100%;
-    height:6px;
-    border-radius:999px;
-    background:rgba(15,23,42,0.9);
-    overflow:hidden;
-  }
-  .bar-fill {
-    position:absolute;
-    left:0;
-    top:0;
-    bottom:0;
-    border-radius:999px;
-    background:linear-gradient(90deg,#22c55e,#38bdf8);
-    width:0%;
-  }
-
   footer {
     font-size:11px;
     color:var(--muted);
     border-top:1px solid rgba(15,23,42,0.9);
-    padding-top:6px;
+    padding-top:4px;
     margin-top:4px;
   }
 </style>
@@ -246,23 +247,18 @@
 <div class="page">
   <section class="left">
     <header>
-      <h1>WorldBox-Style World</h1>
-      <span class="badge">Tile prototype</span>
+      <h1>WorldBox World</h1>
+      <span class="badge">All countries · Zoom & humans</span>
       <div class="sub">1 population unit = 1 million people (rounded up)</div>
     </header>
-    <div id="mapContainer">
-      <canvas id="worldCanvas"></canvas>
+    <div id="mapWrap">
+      <div class="overlay-note">Scroll / pinch to zoom · drag to move · tap a country</div>
+      <svg id="worldSvg" viewBox="0 0 1200 600" preserveAspectRatio="xMidYMid meet"></svg>
     </div>
-    <div class="legend">
-      <div class="pill">Tap tiles to select a country</div>
-      <div class="pill">Borders are regular blocks on a grid</div>
-      <div style="margin-left:auto; display:flex; gap:8px; align-items:center; width:100%; flex-wrap:wrap;">
-        <div class="controls">
-          <button id="btnRandomTick"><span>⚡</span><span>Random population tick</span></button>
-          <button id="btnReset" class="secondary">Reset populations</button>
-        </div>
-        <div id="status">Ready</div>
-      </div>
+    <div class="bottom-bar">
+      <div class="pill">Hover / tap: see name & population</div>
+      <div class="pill">When zoomed in and a country is selected, human dots appear</div>
+      <div id="status">Loading data…</div>
     </div>
   </section>
 
@@ -270,11 +266,11 @@
     <div>
       <div class="panel-title">Selected country</div>
       <div class="info-box">
-        <div style="display:flex; align-items:center; gap:6px;">
-          <div id="infoColorDot" style="width:14px;height:14px;border-radius:4px;background:#0f172a;border:1px solid rgba(148,163,184,0.6);"></div>
+        <div style="display:flex;align-items:center;gap:6px;">
+          <div id="infoColorDot" class="color-dot" style="background:#020617;"></div>
           <div>
-            <div id="infoName" style="font-weight:600;font-size:13px;">None</div>
-            <div id="infoRegion" class="small">Tap a land tile to inspect.</div>
+            <div id="infoName" style="font-size:13px;font-weight:600;">None</div>
+            <div id="infoRegion" class="small">Tap a country on the map.</div>
           </div>
         </div>
         <div class="info-row">
@@ -286,306 +282,335 @@
           <span class="value" id="infoPopUnits">—</span>
         </div>
         <div class="info-row">
-          <span class="label">Relative size</span>
-          <span class="value" id="infoRelative">—</span>
+          <span class="label">Humans drawn</span>
+          <span class="value" id="infoDots">—</span>
         </div>
-        <div class="bar-bg" style="margin-top:6px;">
+        <div class="bar-bg">
           <div class="bar-fill" id="infoBar"></div>
         </div>
       </div>
       <div class="small" style="margin-top:4px;">
-        Populations are rough, hard-coded examples.
-        Each population unit represents ~1 million people, rounded up.
+        Each dot represents a chunk of people (you choose how many millions per dot).
+        We can’t show every literal human, or your iPad would explode.
+      </div>
+    </div>
+
+    <div class="human-slider">
+      <div class="panel-title" style="margin-top:6px;">Humans per dot</div>
+      <div class="small">Lower = more dots, higher = fewer dots.</div>
+      <input type="range" id="humansPerDot" min="1" max="50" value="5" />
+      <div class="info-row">
+        <span class="label">Millions per dot</span>
+        <span class="value" id="humansPerDotLabel">5</span>
+      </div>
+      <div class="info-row">
+        <span class="label">Max dots per country (safety)</span>
+        <span class="value">400</span>
       </div>
     </div>
 
     <div>
-      <div class="panel-title" style="margin-top:6px;">Countries in this prototype</div>
-      <div class="small">Roughly laid out like the real world: Americas on the left, Europe/Africa in the middle, Asia/Oceania on the right.</div>
+      <div class="panel-title" style="margin-top:6px;">Countries (by population)</div>
+      <div class="small">Tap to jump to a country and zoom to it.</div>
     </div>
-    <div class="country-list" id="countryList"></div>
+    <div id="countryList" class="country-list"></div>
 
     <footer>
-      Tip: Put this file in a GitHub repo as <code>index.html</code> and enable GitHub Pages to play it from your iPad.
+      To host: put this file in a GitHub repo as <code>index.html</code>, turn on GitHub Pages (branch: main, folder: root), then open the link.
     </footer>
   </aside>
 </div>
 
 <script>
-document.addEventListener("DOMContentLoaded", () => {
-  const canvas = document.getElementById("worldCanvas");
-  const ctx = canvas.getContext("2d");
-  const statusEl = document.getElementById("status");
-  const mapContainer = document.getElementById("mapContainer");
+(async function() {
+  const POP_CSV_URL = "https://datahub.io/core/population/r/population.csv";
+  const WORLD_GEOJSON_URL = "https://raw.githubusercontent.com/johan/world.geo.json/master/countries.geo.json";
 
-  // Info panel elements
+  const svg = d3.select("#worldSvg");
+  const width = 1200, height = 600;
+  const statusEl = document.getElementById("status");
+  const countryListEl = document.getElementById("countryList");
+  const humansPerDotInput = document.getElementById("humansPerDot");
+  const humansPerDotLabel = document.getElementById("humansPerDotLabel");
+
+  // Info UI elements
   const infoName = document.getElementById("infoName");
   const infoRegion = document.getElementById("infoRegion");
   const infoPopMillions = document.getElementById("infoPopMillions");
   const infoPopUnits = document.getElementById("infoPopUnits");
-  const infoRelative = document.getElementById("infoRelative");
+  const infoDots = document.getElementById("infoDots");
   const infoBar = document.getElementById("infoBar");
   const infoColorDot = document.getElementById("infoColorDot");
-  const countryListEl = document.getElementById("countryList");
 
-  const btnRandomTick = document.getElementById("btnRandomTick");
-  const btnReset = document.getElementById("btnReset");
+  humansPerDotInput.addEventListener("input", () => {
+    humansPerDotLabel.textContent = humansPerDotInput.value;
+    drawHumansForSelected(); // update dots based on new slider value
+  });
 
-  // --- WORLD SETUP ---
-  const GRID_W = 160;   // horizontal tiles
-  const GRID_H = 90;    // vertical tiles
+  function setStatus(msg) {
+    statusEl.textContent = msg;
+  }
 
-  const WATER = null;
+  setStatus("Downloading population CSV…");
 
-  // Rough world countries; populations in millions (approx, just for demo)
-  const countries = [
-    { id:"canada",        name:"Canada",              region:"North America", color:"#38bdf8", populationMillions: 40 },
-    { id:"usa",           name:"United States",       region:"North America", color:"#f97316", populationMillions: 339 },
-    { id:"mexico",        name:"Mexico",              region:"North America", color:"#fb7185", populationMillions: 129 },
-    { id:"brazil",        name:"Brazil",              region:"South America", color:"#22c55e", populationMillions: 216 },
-    { id:"argentina",     name:"Argentina",           region:"South America", color:"#a3e635", populationMillions: 46 },
-    { id:"uk",            name:"United Kingdom",      region:"Europe",        color:"#e5e7eb", populationMillions: 68 },
-    { id:"france",        name:"France",              region:"Europe",        color:"#facc15", populationMillions: 65 },
-    { id:"germany",       name:"Germany",             region:"Europe",        color:"#fbbf24", populationMillions: 84 },
-    { id:"nigeria",       name:"Nigeria",             region:"Africa",        color:"#4ade80", populationMillions: 223 },
-    { id:"egypt",         name:"Egypt",               region:"Africa",        color:"#2dd4bf", populationMillions: 112 },
-    { id:"south_africa",  name:"South Africa",        region:"Africa",        color:"#22c55e", populationMillions: 61 },
-    { id:"russia",        name:"Russia",              region:"Eurasia",       color:"#60a5fa", populationMillions: 144 },
-    { id:"china",         name:"China",               region:"Asia",          color:"#f97373", populationMillions: 1420 },
-    { id:"india",         name:"India",               region:"Asia",          color:"#f97316", populationMillions: 1429 },
-    { id:"japan",         name:"Japan",               region:"Asia",          color:"#f9a8d4", populationMillions: 125 },
-    { id:"indonesia",     name:"Indonesia",           region:"Asia",          color:"#22c55e", populationMillions: 277 },
-    { id:"australia",     name:"Australia",           region:"Oceania",       color:"#38bdf8", populationMillions: 26 }
-  ];
+  // Fetch population CSV
+  const popResp = await fetch(POP_CSV_URL);
+  const popText = await popResp.text();
+  const popParsed = Papa.parse(popText, {header:true, dynamicTyping:true});
+  const popData = popParsed.data.filter(d => d && d["Country Name"] && d.Year && d.Value != null);
 
-  // Compute population units and derived/faster lookup
-  const countriesById = {};
+  // Build pop map by country name + latest year
+  const popMap = new Map();
+  for (const row of popData) {
+    const name = row["Country Name"].trim();
+    const year = +row.Year;
+    const val = +row.Value;
+    if (!popMap.has(name)) {
+      popMap.set(name, {latestYear: year, latestValue: val, byYear: {[year]:val}});
+    } else {
+      const obj = popMap.get(name);
+      obj.byYear[year] = val;
+      if (year > obj.latestYear) {
+        obj.latestYear = year;
+        obj.latestValue = val;
+      }
+    }
+  }
+
+  setStatus("Downloading world GeoJSON…");
+  const geoResp = await fetch(WORLD_GEOJSON_URL);
+  const geojson = await geoResp.json();
+
+  setStatus("Building world…");
+
+  const projection = d3.geoNaturalEarth1()
+    .fitSize([width, height], geojson);
+
+  const path = d3.geoPath().projection(projection);
+
+  // Build countries array with population
+  const countries = geojson.features.map((f, idx) => {
+    const props = f.properties || {};
+    const name = props.name || props.ADMIN || props.admin || f.id || ("Country " + idx);
+    const regionGuess = props.region || props.region_un || props.continent || "Unknown region";
+
+    // population match
+    const popEntry = findPopulationEntry(name);
+    const popMillions = popEntry ? (popEntry.latestValue / 1_000_000) : null;
+    const popUnits = popMillions != null ? Math.ceil(popMillions) : null;
+
+    const centroid = path.centroid(f);
+    const bounds = path.bounds(f); // [[x0,y0],[x1,y1]]
+
+    return {
+      id: props.iso_a3 || props.ISO_A3 || f.id || name,
+      name,
+      region: regionGuess,
+      feature: f,
+      centroid,
+      bounds,
+      populationRaw: popEntry ? popEntry.latestValue : null,
+      populationMillions: popMillions,
+      populationUnits: popUnits
+    };
+  });
+
+  function findPopulationEntry(countryName) {
+    // exact match
+    if (popMap.has(countryName)) return popMap.get(countryName);
+    // some common aliases
+    const aliases = {
+      "United States of America":"United States",
+      "Democratic Republic of the Congo":"Congo, Dem. Rep.",
+      "Republic of the Congo":"Congo, Rep.",
+      "Russian Federation":"Russian Federation",
+      "Bolivia":"Bolivia (Plurinational State of)",
+      "Iran":"Iran, Islamic Rep.",
+      "Egypt":"Egypt, Arab Rep.",
+      "Venezuela":"Venezuela, RB",
+      "Syria":"Syrian Arab Republic",
+      "Bahamas":"Bahamas, The",
+      "Gambia":"Gambia, The",
+      "Yemen":"Yemen, Rep.",
+      "Czechia":"Czech Republic",
+      "Eswatini":"Swaziland",
+      "North Macedonia":"Macedonia, FYR",
+      "Cape Verde":"Cabo Verde",
+      "Micronesia":"Micronesia, Fed. Sts.",
+      "Kyrgyzstan":"Kyrgyz Republic",
+      "Slovakia":"Slovak Republic"
+    };
+    if (aliases[countryName] && popMap.has(aliases[countryName])) {
+      return popMap.get(aliases[countryName]);
+    }
+    // loose match: try contains
+    const target = countryName.toLowerCase();
+    let best = null;
+    let bestScore = 0;
+    for (const [name, entry] of popMap.entries()) {
+      const l = name.toLowerCase();
+      let score = 0;
+      if (l === target) score = 3;
+      else if (l.includes(target) || target.includes(l)) score = 2;
+      else if (l.split(" ")[0] === target.split(" ")[0]) score = 1;
+      if (score > bestScore) {
+        bestScore = score;
+        best = entry;
+      }
+    }
+    if (bestScore >= 2) return best;
+    return null;
+  }
+
+  // Find max popUnits for relative bar
   let maxUnits = 0;
-  for (const c of countries) {
-    c.populationUnits = Math.ceil(c.populationMillions); // 38M -> 38 units
-    countriesById[c.id] = c;
-    if (c.populationUnits > maxUnits) maxUnits = c.populationUnits;
+  countries.forEach(c => {
+    if (c.populationUnits && c.populationUnits > maxUnits) {
+      maxUnits = c.populationUnits;
+    }
+  });
+
+  // Build scales
+  const colorScale = d3.scaleSequential(d3.interpolateYlGnBu)
+    .domain([0, d3.max(countries, d => d.populationMillions || 0) || 1]);
+
+  // SVG groups
+  svg.attr("width", width).attr("height", height);
+  const root = svg.append("g").attr("class","root");
+  const countryGroup = root.append("g").attr("class","countries");
+  const humansGroup = root.append("g").attr("class","humans").attr("opacity",0.95);
+
+  // Draw countries
+  const countryPaths = countryGroup
+    .selectAll("path.country")
+    .data(countries, d => d.id)
+    .enter()
+    .append("path")
+    .attr("class","country")
+    .attr("d", d => path(d.feature))
+    .attr("fill", d => {
+      if (!d.populationMillions) return "#0b3b58";
+      return colorScale(d.populationMillions);
+    })
+    .attr("stroke","#020617")
+    .attr("stroke-width",0.4)
+    .attr("vector-effect","non-scaling-stroke")
+    .style("cursor","pointer");
+
+  // Simple hover tooltip
+  const tooltip = d3.select("body").append("div")
+    .style("position","absolute")
+    .style("pointer-events","none")
+    .style("background","rgba(15,23,42,0.95)")
+    .style("border","1px solid rgba(148,163,184,0.6)")
+    .style("border-radius","6px")
+    .style("padding","6px 8px")
+    .style("font-size","12px")
+    .style("color","#e5e7eb")
+    .style("box-shadow","0 12px 32px rgba(0,0,0,0.4)")
+    .style("display","none");
+
+  function showTooltip(event, d) {
+    const popText = d.populationMillions != null
+      ? `${d.populationMillions.toFixed(1)}M (units: ${d.populationUnits})`
+      : "unknown";
+    tooltip
+      .style("display","block")
+      .html(`<strong>${d.name}</strong><br><span style="color:#9ca3af;">Population:</span> ${popText}`)
+      .style("left", (event.pageX + 10) + "px")
+      .style("top", (event.pageY + 10) + "px");
+  }
+  function hideTooltip() {
+    tooltip.style("display","none");
   }
 
-  // Tile map: 2D array [y][x] -> countryId or WATER
-  const tiles = Array.from({length: GRID_H}, () => Array(GRID_W).fill(WATER));
+  countryPaths
+    .on("mouseover", function(event,d){
+      d3.select(this).attr("stroke","#0f172a").attr("stroke-width",1.1);
+      showTooltip(event,d);
+    })
+    .on("mousemove", showTooltip)
+    .on("mouseout", function(event,d){
+      d3.select(this).attr("stroke","#020617").attr("stroke-width",0.4);
+      hideTooltip();
+    });
 
-  function fillRectCountry(id, x0, y0, x1, y1) {
-    for (let y = y0; y < y1; y++) {
-      if (y < 0 || y >= GRID_H) continue;
-      const row = tiles[y];
-      for (let x = x0; x < x1; x++) {
-        if (x < 0 || x >= GRID_W) continue;
-        row[x] = id;
+  let selectedCountry = null;
+
+  countryPaths.on("click", function(event, d) {
+    selectedCountry = d;
+    updateInfoPanel();
+    zoomToCountry(d);
+    drawHumansForSelected();
+    updateCountryListHighlight();
+  });
+
+  // Zoom / pan
+  const zoom = d3.zoom()
+    .scaleExtent([1, 30])
+    .on("zoom", (event) => {
+      root.attr("transform", event.transform);
+      // If zoomed out too far, hide humans
+      const k = event.transform.k;
+      if (k < 3) {
+        humansGroup.attr("display","none");
+      } else {
+        humansGroup.attr("display", selectedCountry ? null : "none");
       }
-    }
+    });
+
+  svg.call(zoom);
+
+  function zoomToCountry(c) {
+    const [[x0, y0], [x1, y1]] = path.bounds(c.feature);
+    const dx = x1 - x0;
+    const dy = y1 - y0;
+    const cx = (x0 + x1) / 2;
+    const cy = (y0 + y1) / 2;
+    const scale = Math.max(1, Math.min(24, 0.9 / Math.max(dx / width, dy / height)));
+    const translate = [width / 2 - scale * cx, height / 2 - scale * cy];
+    svg.transition().duration(800).call(
+      zoom.transform,
+      d3.zoomIdentity.translate(translate[0], translate[1]).scale(scale)
+    );
   }
 
-  function buildWorld() {
-    // Start with water everywhere (already done)
-    // Then stamp continents & countries roughly where they belong.
-
-    // North America
-    fillRectCountry("canada", 14, 8, 60, 26);   // top left
-    fillRectCountry("usa",    18, 26, 60, 42);
-    fillRectCountry("mexico", 24, 42, 50, 52);
-
-    // South America
-    fillRectCountry("brazil",    40, 50, 70, 78);
-    fillRectCountry("argentina", 46, 66, 66, 84);
-
-    // Europe
-    fillRectCountry("uk",      76, 18, 82, 26);
-    fillRectCountry("france",  82, 26, 90, 34);
-    fillRectCountry("germany", 90, 22, 100, 34);
-
-    // Africa
-    fillRectCountry("egypt",        92, 34, 112, 44);
-    fillRectCountry("nigeria",      92, 44, 108, 62);
-    fillRectCountry("south_africa", 94, 62, 112, 84);
-
-    // Eurasia / Asia
-    fillRectCountry("russia",  80, 8, 150, 28);
-    fillRectCountry("china",   108, 30, 140, 50);
-    fillRectCountry("india",   104, 50, 124, 66);
-    fillRectCountry("indonesia", 118, 62, 142, 78);
-    fillRectCountry("japan",   142, 34, 152, 44);
-
-    // Australia / Oceania
-    fillRectCountry("australia", 130, 66, 156, 86);
-  }
-
-  // --- DRAWING ---
-
-  let selectedCountryId = null;
-
-  function lightenColor(hex, amt = 40) {
-    let col = hex.replace("#", "");
-    if (col.length === 3) {
-      col = col.split("").map(c => c + c).join("");
-    }
-    let num = parseInt(col, 16);
-    let r = (num >> 16) + amt;
-    let g = ((num >> 8) & 0xff) + amt;
-    let b = (num & 0xff) + amt;
-    r = Math.min(255, Math.max(0, r));
-    g = Math.min(255, Math.max(0, g));
-    b = Math.min(255, Math.max(0, b));
-    return "#" + ((r << 16) | (g << 8) | b).toString(16).padStart(6, "0");
-  }
-
-  function resizeCanvas() {
-    const rect = mapContainer.getBoundingClientRect();
-    const ratio = window.devicePixelRatio || 1;
-    const width = rect.width;
-    const height = rect.width * 0.56; // 16:9-ish
-
-    canvas.style.width = width + "px";
-    canvas.style.height = height + "px";
-    canvas.width = Math.floor(width * ratio);
-    canvas.height = Math.floor(height * ratio);
-
-    ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
-
-    drawWorld();
-  }
-
-  function drawWorld() {
-    const rect = canvas.getBoundingClientRect();
-    const width = rect.width;
-    const height = rect.height;
-    const tileW = width / GRID_W;
-    const tileH = height / GRID_H;
-
-    // Background water
-    ctx.fillStyle = "#082f49";
-    ctx.fillRect(0, 0, width, height);
-
-    // Optional: subtle noise (we'll fake it by light random variations on water)
-    for (let y = 0; y < GRID_H; y += 3) {
-      for (let x = 0; x < GRID_W; x += 3) {
-        if (tiles[y][x] !== WATER) continue;
-        ctx.fillStyle = Math.random() < 0.5 ? "#083344" : "#0b3b56";
-        ctx.fillRect(x * tileW, y * tileH, tileW, tileH);
-      }
-    }
-
-    // Land tiles
-    for (let y = 0; y < GRID_H; y++) {
-      const row = tiles[y];
-      for (let x = 0; x < GRID_W; x++) {
-        const id = row[x];
-        if (!id) continue;
-        const country = countriesById[id];
-        if (!country) continue;
-        const base = country.color;
-        const fill = (id === selectedCountryId) ? lightenColor(base, 60) : base;
-        ctx.fillStyle = fill;
-        ctx.fillRect(x * tileW, y * tileH, tileW + 0.4, tileH + 0.4);
-      }
-    }
-
-    // Draw chunky coastlines (simple effect: outline border between water and land)
-    ctx.strokeStyle = "rgba(15,23,42,0.9)";
-    ctx.lineWidth = Math.max(1, tileW * 0.4);
-    ctx.lineCap = "square";
-    ctx.beginPath();
-    for (let y = 0; y < GRID_H; y++) {
-      for (let x = 0; x < GRID_W; x++) {
-        const id = tiles[y][x];
-        if (!id) continue;
-        const up = y > 0 ? tiles[y - 1][x] : id;
-        const down = y < GRID_H - 1 ? tiles[y + 1][x] : id;
-        const left = x > 0 ? tiles[y][x - 1] : id;
-        const right = x < GRID_W - 1 ? tiles[y][x + 1] : id;
-        if (up !== id || down !== id || left !== id || right !== id) {
-          const cx = (x + 0.5) * tileW;
-          const cy = (y + 0.5) * tileH;
-          ctx.moveTo(cx - tileW * 0.55, cy);
-          ctx.lineTo(cx + tileW * 0.55, cy);
-        }
-      }
-    }
-    ctx.stroke();
-  }
-
-  // --- INPUT & INFO PANEL ---
-
-  function pickCountryAtClientPos(clientX, clientY) {
-    const rect = canvas.getBoundingClientRect();
-    const x = clientX - rect.left;
-    const y = clientY - rect.top;
-    if (x < 0 || y < 0 || x > rect.width || y > rect.height) return null;
-
-    const gridX = Math.floor(x / (rect.width / GRID_W));
-    const gridY = Math.floor(y / (rect.height / GRID_H));
-    if (gridY < 0 || gridY >= GRID_H || gridX < 0 || gridX >= GRID_W) return null;
-    return tiles[gridY][gridX];
-  }
-
-  function updateInfoPanel(id) {
-    if (!id || !countriesById[id]) {
+  function updateInfoPanel() {
+    if (!selectedCountry) {
       infoName.textContent = "None";
-      infoRegion.textContent = "Tap a land tile to inspect.";
+      infoRegion.textContent = "Tap a country on the map.";
       infoPopMillions.textContent = "—";
       infoPopUnits.textContent = "—";
-      infoRelative.textContent = "—";
+      infoDots.textContent = "—";
       infoBar.style.width = "0%";
-      infoColorDot.style.background = "#0f172a";
+      infoColorDot.style.background = "#020617";
       return;
     }
-    const c = countriesById[id];
+    const c = selectedCountry;
     infoName.textContent = c.name;
     infoRegion.textContent = c.region;
-    infoPopMillions.textContent = c.populationMillions.toLocaleString("en-US");
-    infoPopUnits.textContent = c.populationUnits.toLocaleString("en-US");
-    const rel = Math.round((c.populationUnits / maxUnits) * 100);
-    infoRelative.textContent = rel + "% of biggest in world";
-    infoBar.style.width = rel + "%";
-    infoColorDot.style.background = c.color;
-  }
-
-  function rebuildCountryList() {
-    countryListEl.innerHTML = "";
-    const sorted = [...countries].sort((a,b) => b.populationMillions - a.populationMillions);
-    for (const c of sorted) {
-      const row = document.createElement("div");
-      row.className = "country-row";
-      row.dataset.id = c.id;
-
-      const nameSpan = document.createElement("div");
-      nameSpan.className = "country-row-name";
-      const colorDot = document.createElement("div");
-      colorDot.className = "color-dot";
-      colorDot.style.background = c.color;
-      const text = document.createElement("span");
-      text.textContent = c.name;
-      nameSpan.appendChild(colorDot);
-      nameSpan.appendChild(text);
-
-      const popSpan = document.createElement("div");
-      popSpan.className = "country-row-pop";
-      popSpan.textContent = `${c.populationMillions}M (${c.populationUnits})`;
-
-      row.appendChild(nameSpan);
-      row.appendChild(popSpan);
-
-      row.addEventListener("click", () => {
-        selectedCountryId = c.id;
-        updateInfoPanel(selectedCountryId);
-        highlightSelectedRow();
-        drawWorld();
-      });
-
-      countryListEl.appendChild(row);
+    if (c.populationMillions != null) {
+      infoPopMillions.textContent = c.populationMillions.toFixed(1);
+      infoPopUnits.textContent = c.populationUnits + "";
+      const rel = maxUnits ? Math.round((c.populationUnits / maxUnits) * 100) : 0;
+      infoBar.style.width = rel + "%";
+    } else {
+      infoPopMillions.textContent = "unknown";
+      infoPopUnits.textContent = "unknown";
+      infoBar.style.width = "0%";
     }
-    highlightSelectedRow();
+    // color sample
+    const fill = (c.populationMillions != null) ? colorScale(c.populationMillions) : "#0b3b58";
+    infoColorDot.style.background = fill;
+
+    const dots = humansGroup.selectAll("circle").size();
+    infoDots.textContent = dots ? dots : "0";
   }
 
-  function highlightSelectedRow() {
+  function updateCountryListHighlight() {
     const rows = countryListEl.querySelectorAll(".country-row");
     rows.forEach(row => {
-      if (row.dataset.id === selectedCountryId) {
+      if (selectedCountry && row.dataset.id === selectedCountry.id) {
         row.classList.add("selected");
       } else {
         row.classList.remove("selected");
@@ -593,98 +618,112 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   }
 
-  canvas.addEventListener("click", (evt) => {
-    const id = pickCountryAtClientPos(evt.clientX, evt.clientY);
-    if (!id) {
-      selectedCountryId = null;
+  // Build country list (sorted by population)
+  const sortedCountries = countries.slice().sort((a,b) => (b.populationMillions || 0) - (a.populationMillions || 0));
+  countryListEl.innerHTML = "";
+  sortedCountries.forEach(c => {
+    const row = document.createElement("div");
+    row.className = "country-row";
+    row.dataset.id = c.id;
+
+    const nameDiv = document.createElement("div");
+    nameDiv.className = "country-row-name";
+
+    const colorDot = document.createElement("div");
+    colorDot.className = "color-dot";
+    const fill = (c.populationMillions != null) ? colorScale(c.populationMillions) : "#0b3b58";
+    colorDot.style.background = fill;
+
+    const nameSpan = document.createElement("span");
+    nameSpan.textContent = c.name;
+
+    nameDiv.appendChild(colorDot);
+    nameDiv.appendChild(nameSpan);
+
+    const popSpan = document.createElement("div");
+    popSpan.className = "country-row-pop";
+    if (c.populationMillions != null) {
+      popSpan.textContent = c.populationMillions.toFixed(1) + "M";
     } else {
-      selectedCountryId = id;
+      popSpan.textContent = "unknown";
     }
-    updateInfoPanel(selectedCountryId);
-    highlightSelectedRow();
-    drawWorld();
+
+    row.appendChild(nameDiv);
+    row.appendChild(popSpan);
+
+    row.addEventListener("click", () => {
+      selectedCountry = c;
+      updateInfoPanel();
+      zoomToCountry(c);
+      drawHumansForSelected();
+      updateCountryListHighlight();
+    });
+
+    countryListEl.appendChild(row);
   });
 
-  // Touch support for iPad
-  canvas.addEventListener("touchstart", (evt) => {
-    const t = evt.touches[0];
-    const id = pickCountryAtClientPos(t.clientX, t.clientY);
-    if (!id) {
-      selectedCountryId = null;
+  // --- HUMAN DOTS ---
+  function drawHumansForSelected() {
+    humansGroup.selectAll("*").remove();
+    if (!selectedCountry || !selectedCountry.populationMillions) {
+      updateInfoPanel();
+      return;
+    }
+
+    const millionsPerDot = parseFloat(humansPerDotInput.value) || 1;
+    humansPerDotLabel.textContent = millionsPerDot;
+    let dotCount = Math.ceil(selectedCountry.populationMillions / millionsPerDot);
+    const MAX_DOTS = 400;
+    if (dotCount > MAX_DOTS) dotCount = MAX_DOTS;
+
+    // If zoom is very far out, don't draw
+    const currentTransform = d3.zoomTransform(svg.node());
+    if (currentTransform.k < 3) {
+      humansGroup.attr("display","none");
+      updateInfoPanel();
+      return;
     } else {
-      selectedCountryId = id;
+      humansGroup.attr("display", null);
     }
-    updateInfoPanel(selectedCountryId);
-    highlightSelectedRow();
-    drawWorld();
-  }, {passive:true});
 
-  // --- SIMPLE POPULATION SIMULATION ---
+    // Sample random points inside the country polygon
+    const feature = selectedCountry.feature;
+    const bounds = d3.geoBounds(feature); // [[minLon,minLat],[maxLon,maxLat]]
+    const [minLon, minLat] = bounds[0];
+    const [maxLon, maxLat] = bounds[1];
 
-  function randomTick() {
-    statusEl.textContent = "Random tick...";
-    for (const c of countries) {
-      const change = Math.random() < 0.6 ? 0 : (Math.random() < 0.5 ? 1 : -1);
-      const newMillions = Math.max(1, c.populationMillions + change);
-      c.populationMillions = newMillions;
-      c.populationUnits = Math.ceil(newMillions);
-    }
-    // Recompute maxUnits for relative bar
-    maxUnits = 0;
-    for (const c of countries) {
-      if (c.populationUnits > maxUnits) maxUnits = c.populationUnits;
-    }
-    rebuildCountryList();
-    updateInfoPanel(selectedCountryId);
-    statusEl.textContent = "Tick complete";
-  }
+    const points = [];
+    let tries = 0;
+    const MAX_TRIES = dotCount * 30;
 
-  function resetPopulations() {
-    statusEl.textContent = "Resetting populations...";
-    // Reset to original approximate values
-    const baseValues = {
-      canada: 40, usa: 339, mexico:129, brazil:216, argentina:46,
-      uk:68, france:65, germany:84,
-      nigeria:223, egypt:112, south_africa:61,
-      russia:144, china:1420, india:1429, japan:125, indonesia:277, australia:26
-    };
-    for (const c of countries) {
-      const base = baseValues[c.id];
-      if (base) {
-        c.populationMillions = base;
-        c.populationUnits = Math.ceil(base);
+    while (points.length < dotCount && tries < MAX_TRIES) {
+      tries++;
+      const lon = minLon + Math.random() * (maxLon - minLon);
+      const lat = minLat + Math.random() * (maxLat - minLat);
+      if (d3.geoContains(feature, [lon, lat])) {
+        const [x, y] = projection([lon, lat]);
+        points.push([x, y]);
       }
     }
-    maxUnits = 0;
-    for (const c of countries) {
-      if (c.populationUnits > maxUnits) maxUnits = c.populationUnits;
-    }
-    rebuildCountryList();
-    updateInfoPanel(selectedCountryId);
-    statusEl.textContent = "Ready";
+
+    humansGroup
+      .selectAll("circle")
+      .data(points)
+      .enter()
+      .append("circle")
+      .attr("cx", d => d[0])
+      .attr("cy", d => d[1])
+      .attr("r", 1.2)
+      .attr("fill", "#f9fafb")
+      .attr("stroke", "#0f172a")
+      .attr("stroke-width", 0.3)
+      .attr("vector-effect","non-scaling-stroke");
+
+    updateInfoPanel();
   }
 
-  btnRandomTick.addEventListener("click", () => {
-    randomTick();
-  });
-
-  btnReset.addEventListener("click", () => {
-    resetPopulations();
-  });
-
-  // --- INIT ---
-  statusEl.textContent = "Building world...";
-  buildWorld();
-  rebuildCountryList();
-  selectedCountryId = "usa";
-  updateInfoPanel(selectedCountryId);
-  statusEl.textContent = "Ready";
-
-  window.addEventListener("resize", () => {
-    resizeCanvas();
-  });
-  resizeCanvas();
-});
+  setStatus("Ready. Tap a country, then zoom in to see humans.");
+})();
 </script>
 </body>
 </html>
