@@ -1,0 +1,430 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>WorldBox — Regular Borders (Web Prototype)</title>
+
+<!-- D3 for map projection and drawing -->
+<script src="https://d3js.org/d3.v7.min.js"></script>
+<!-- PapaParse to quickly parse CSV -->
+<script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
+
+<style>
+  :root {
+    --bg: #0f1720;
+    --panel: #0b1220;
+    --accent: #69b3ff;
+    --muted: #9aa9b8;
+  }
+  html,body { height:100%; margin:0; font-family:Inter,system-ui,Segoe UI,Roboto,"Helvetica Neue",Arial; background:var(--bg); color:#e6eef6; }
+  .wrap { display:flex; height:100vh; gap:12px; padding:12px; box-sizing:border-box; }
+  .left {
+    width: 74%;
+    background: linear-gradient(180deg,#07202a 0%, #072a34 100%);
+    border-radius:8px;
+    padding:10px;
+    box-sizing:border-box;
+    display:flex;
+    flex-direction:column;
+    gap:10px;
+  }
+  .right {
+    width:26%;
+    background: linear-gradient(180deg,#061219 0%, #081820 100%);
+    border-radius:8px;
+    padding:12px;
+    box-sizing:border-box;
+    display:flex;
+    flex-direction:column;
+    gap:12px;
+  }
+  header { display:flex; align-items:center; gap:12px; }
+  header h1 { margin:0; font-size:18px; letter-spacing:0.2px; }
+  #mapCanvas { width:100%; height:100%; border-radius:6px; background: linear-gradient(#cfeef2,#dff7fb); display:block; }
+  .controls { display:flex; gap:8px; flex-wrap:wrap; }
+  button, .btn {
+    background:var(--accent); color:#04202a; border:none; padding:8px 10px; border-radius:6px; cursor:pointer; font-weight:600;
+  }
+  button.secondary { background:transparent; color:var(--muted); border:1px solid rgba(255,255,255,0.04); }
+  small { color:var(--muted); display:block; margin-top:8px; }
+  pre { background:rgba(0,0,0,0.12); padding:8px; border-radius:6px; color:#dbeaf6; overflow:auto; max-height:180px; }
+  .loader { color:var(--muted); font-size:13px; }
+  .legend { display:flex; gap:8px; flex-direction:column; }
+  .row { display:flex; justify-content:space-between; align-items:center; gap:8px; }
+  label { font-size:13px; color:var(--muted); }
+  footer { font-size:12px; color:var(--muted); margin-top:auto; }
+</style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="left" id="left">
+      <header>
+        <h1>WorldBox — Real-world placement, regular borders</h1>
+        <div style="margin-left:auto; color:var(--muted); font-size:13px;">1 = 1 million people (rounded up)</div>
+      </header>
+
+      <div style="flex:1; min-height:320px; position:relative; display:flex; flex-direction:column;">
+        <svg id="svgMap" viewBox="0 0 1200 600" preserveAspectRatio="xMidYMid meet" style="width:100%; height:100%; border-radius:6px; background:linear-gradient(#cfeef2,#dff7fb);"></svg>
+      </div>
+
+      <div style="display:flex; gap:8px; align-items:center; margin-top:8px;">
+        <div class="controls">
+          <button id="regenBtn">Regenerate polygons</button>
+          <button id="downloadState" class="secondary">Download JSON state</button>
+          <button id="saveSvg" class="secondary">Download SVG</button>
+        </div>
+        <div style="margin-left:auto; color:var(--muted); font-size:13px;" id="status">Status: idle</div>
+      </div>
+    </div>
+
+    <aside class="right">
+      <div>
+        <div class="loader" id="loader">Loading data...</div>
+        <small>Data sources: World population (DataHub / World Bank mirror) and public world GeoJSON.</small>
+      </div>
+
+      <div>
+        <label>Year:</label>
+        <select id="yearSelect"></select>
+        <small>Select year to use population values (defaults to latest available in CSV).</small>
+      </div>
+
+      <div>
+        <label>Visual scale (radius):</label>
+        <input id="scaleRange" type="range" min="0.4" max="6.0" step="0.1" value="1.0" />
+        <small id="scaleValue">1.0</small>
+      </div>
+
+      <div class="legend">
+        <div class="row"><label>Countries loaded</label><div id="countCountries">—</div></div>
+        <div class="row"><label>Countries with population data</label><div id="countWithPop">—</div></div>
+      </div>
+
+      <div>
+        <label>Console</label>
+        <pre id="console" aria-live="polite">Waiting...</pre>
+      </div>
+
+      <footer>
+        Hosted locally in your browser. To deploy: push this file to a GitHub repo and enable GitHub Pages (main / root).
+      </footer>
+    </aside>
+  </div>
+
+<script>
+(async function(){
+  // URLs for data
+  const POP_CSV_URL = "https://datahub.io/core/population/r/population.csv";
+  // A commonly used GeoJSON of countries (public GitHub raw)
+  const WORLD_GEOJSON_URL = "https://raw.githubusercontent.com/johan/world.geo.json/master/countries.geo.json";
+
+  const svg = d3.select("#svgMap");
+  const width = 1200, height = 600;
+  svg.attr("viewBox", `0 0 ${width} ${height}`);
+
+  const statusEl = document.getElementById("status");
+  const loader = document.getElementById("loader");
+  const consoleEl = document.getElementById("console");
+  const countCountriesEl = document.getElementById("countCountries");
+  const countWithPopEl = document.getElementById("countWithPop");
+  const scaleRange = document.getElementById("scaleRange");
+  const scaleValue = document.getElementById("scaleValue");
+  const yearSelect = document.getElementById("yearSelect");
+
+  function log(...args){
+    consoleEl.textContent = args.map(a => typeof a === "object" ? JSON.stringify(a) : String(a)).join(" ");
+  }
+
+  scaleRange.addEventListener("input", ()=> {
+    scaleValue.textContent = scaleRange.value;
+    renderPolygons();
+  });
+
+  document.getElementById("regenBtn").addEventListener("click", ()=> {
+    renderPolygons();
+  });
+
+  document.getElementById("downloadState").addEventListener("click", ()=> {
+    downloadStateJSON();
+  });
+
+  document.getElementById("saveSvg").addEventListener("click", ()=> {
+    const serializer = new XMLSerializer();
+    const svgNode = svg.node();
+    const str = serializer.serializeToString(svgNode);
+    const blob = new Blob([str], {type: "image/svg+xml;charset=utf-8"});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "worldbox_map.svg";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  });
+
+  statusEl.textContent = "Fetching population CSV...";
+  loader.textContent = "Downloading population CSV...";
+
+  // fetch CSV and parse with PapaParse
+  const popResp = await fetch(POP_CSV_URL);
+  if(!popResp.ok) { loader.textContent = "Failed to download population CSV"; statusEl.textContent="error"; log("Failed to fetch population CSV"); return; }
+  const popText = await popResp.text();
+  const popParsed = Papa.parse(popText, {header:true, dynamicTyping:true});
+  const popData = popParsed.data.filter(r => r && r["Country Name"] && r["Year"] && (r["Value"] !== undefined));
+  // Build a map: countryName -> {year->value}
+  const popMap = new Map();
+  for(const r of popData){
+    const name = r["Country Name"].trim();
+    const year = String(r["Year"]);
+    const val = Number(r["Value"]);
+    if(!popMap.has(name)) popMap.set(name, {});
+    popMap.get(name)[year] = val;
+  }
+  // Build year list
+  const allYears = Array.from(new Set(popData.map(d=>String(d["Year"])))).sort();
+  // fill year select
+  yearSelect.innerHTML = "";
+  for(const y of allYears) {
+    const opt = document.createElement("option");
+    opt.value = y; opt.textContent = y;
+    yearSelect.appendChild(opt);
+  }
+  // default to the latest year available
+  const defaultYear = allYears[allYears.length-1];
+  yearSelect.value = defaultYear;
+
+  loader.textContent = "Downloading world GeoJSON...";
+  statusEl.textContent = "Fetching world GeoJSON...";
+  const geoResp = await fetch(WORLD_GEOJSON_URL);
+  if(!geoResp.ok){ loader.textContent = "Failed to download GeoJSON"; statusEl.textContent="error"; log("Failed to fetch geojson"); return; }
+  const geojson = await geoResp.json();
+
+  loader.textContent = "Preparing projection and computing centroids...";
+  statusEl.textContent = "Preparing map...";
+
+  // d3 projection: Mercator centered to fit
+  const projection = d3.geoMercator().fitSize([width, height], geojson);
+  const path = d3.geoPath().projection(projection);
+
+  // compute centroids for each feature (using geoPath.centroid)
+  const countries = geojson.features.map(f => {
+    const cname = f.properties.name || f.properties.NAME || f.properties.admin || f.id || "Unnamed";
+    const centroid = path.centroid(f); // projected [x,y]
+    // fallback if centroid gives NaN (point-like countries)
+    const c = Array.isArray(centroid) && isFinite(centroid[0]) ? centroid : projection(d3.geoCentroid(f));
+    return {
+      id: f.id || cname,
+      name: cname,
+      feature: f,
+      centroid: c,
+      _bounds: path.bounds(f) // used for sizing heuristics
+    };
+  });
+
+  countCountriesEl.textContent = countries.length;
+
+  // Build a lookup from popMap keys lowercased for faster matching
+  const popNames = Array.from(popMap.keys());
+  const popNamesLower = popNames.map(s=>s.toLowerCase());
+
+  function matchPopulationByName(name) {
+    // try direct match
+    let idx = popNamesLower.indexOf(name.toLowerCase());
+    if(idx !== -1) return popMap.get(popNames[idx]);
+    // small set of common alternate names mapping:
+    const alt = name.replace(/^The /i,"").replace("United States of America","United States").replace("UK","United Kingdom").replace("Russian Federation","Russia").replace("Ivory Coast","Côte d'Ivoire");
+    idx = popNamesLower.indexOf(alt.toLowerCase());
+    if(idx !== -1) return popMap.get(popNames[idx]);
+    // try contains or startsWith (best-effort)
+    const lowered = name.toLowerCase();
+    for(let i=0;i<popNamesLower.length;i++){
+      if(popNamesLower[i].includes(lowered) || lowered.includes(popNamesLower[i])) return popMap.get(popNames[i]);
+    }
+    return null;
+  }
+
+  // attach population (raw & millions rounded up) for chosen year
+  function attachPopulation(year){
+    let withPopCount = 0;
+    for(const c of countries){
+      const popEntry = matchPopulationByName(c.name);
+      let raw = null;
+      if(popEntry && popEntry[year] !== undefined) {
+        raw = Number(popEntry[year]);
+      } else if(popEntry) {
+        // fallback: latest available for that country
+        const yrs = Object.keys(popEntry).sort();
+        raw = Number(popEntry[yrs[yrs.length-1]]);
+      }
+      c.population_raw = raw;
+      c.population_millions = raw? Math.ceil(raw/1_000_000) : null;
+      if(c.population_millions) withPopCount++;
+    }
+    countWithPopEl.textContent = withPopCount;
+  }
+
+  // initial attach
+  attachPopulation(defaultYear);
+
+  loader.textContent = "Rendering map...";
+  statusEl.textContent = "Rendering";
+
+  // SVG groups
+  svg.selectAll("*").remove();
+  const gPolys = svg.append("g").attr("class","polygons");
+  const gLabels = svg.append("g").attr("class","labels");
+
+  function computeRadiusFromBounds(bounds) {
+    // bounds is [[x0,y0],[x1,y1]] in projected pixels — use diagonal length as proxy
+    const dx = bounds[1][0] - bounds[0][0];
+    const dy = bounds[1][1] - bounds[0][1];
+    const diag = Math.sqrt(dx*dx + dy*dy);
+    return Math.max(6, diag * 0.18); // tweak factor for pleasant visuals
+  }
+
+  function sidesForRadius(r) {
+    if(r < 8) return 4;
+    if(r < 18) return 6;
+    if(r < 40) return 8;
+    return 12;
+  }
+
+  function regularPolygonPoints(cx, cy, r, n, rotation=0){
+    const pts = [];
+    for(let i=0;i<n;i++){
+      const ang = rotation + 2*Math.PI*i/n;
+      const x = cx + r * Math.cos(ang);
+      const y = cy + r * Math.sin(ang);
+      pts.push([x,y]);
+    }
+    return pts;
+  }
+
+  function renderPolygons(){
+    statusEl.textContent = "Rendering polygons...";
+    gPolys.selectAll("*").remove();
+    gLabels.selectAll("*").remove();
+
+    // background rectangle (ocean)
+    svg.append("rect")
+      .attr("x",0).attr("y",0).attr("width",width).attr("height",height)
+      .attr("fill","none"); // already background via CSS
+
+    const scaleFactor = parseFloat(scaleRange.value);
+
+    // draw each country as a regular polygon centered at centroid
+    const polys = gPolys.selectAll("path").data(countries, d=>d.id);
+    polys.join(
+      enter => {
+        const group = enter.append("path")
+          .attr("fill", d => {
+            const pop = d.population_millions || 0;
+            // color by population buckets (stylized)
+            if(pop >= 100) return "#0b3f52";
+            if(pop >= 50) return "#0e5f73";
+            if(pop >= 20) return "#147a92";
+            if(pop >= 5) return "#1ba8c0";
+            return "#7fd6e9";
+          })
+          .attr("stroke","#001219")
+          .attr("stroke-width",0.6)
+          .attr("opacity",0.95)
+          .on("mouseover", (e,d)=>{
+            const el = d3.select(e.currentTarget);
+            el.attr("stroke","#001219").attr("stroke-width",1.2);
+            showTooltip(e,d);
+          })
+          .on("mouseout",(e,d)=>{
+            d3.select(e.currentTarget).attr("stroke","#001219").attr("stroke-width",0.6);
+            hideTooltip();
+          })
+          .on("click",(e,d)=>{
+            alert(`${d.name}\nPopulation (raw): ${d.population_raw ?? "unknown"}\nPopulation (millions, rounded up): ${d.population_millions ?? "unknown"}`);
+          });
+        return group;
+      },
+      update => update,
+      exit => exit.remove()
+    );
+
+    // set d attribute for every country path
+    gPolys.selectAll("path").each(function(d){
+      const [cx,cy] = d.centroid;
+      // radius decision: use population magnitude (if available) else bounds proxy
+      let r;
+      if(d.population_millions) {
+        // visual scaling: log-ish
+        r = Math.max(4, Math.log1p(d.population_millions) * 8) * scaleFactor;
+      } else {
+        r = computeRadiusFromBounds(d._bounds) * 0.6 * scaleFactor;
+      }
+      const sides = sidesForRadius(r);
+      const pts = regularPolygonPoints(cx, cy, r, sides, 0.6);
+      const dAttr = "M " + pts.map(p=>p.join(" ")).join(" L ") + " Z";
+      d3.select(this).attr("d", dAttr);
+    });
+
+    // labels for large countries
+    const labelData = countries.filter(d => d.population_millions && d.population_millions >= 50);
+    const labels = gLabels.selectAll("text").data(labelData, d=>d.id);
+    labels.join(
+      enter => enter.append("text").text(d=>d.name).attr("font-size",12).attr("fill","#022f38").attr("font-weight",700).attr("pointer-events","none"),
+      update => update,
+      exit => exit.remove()
+    ).attr("x", d=>d.centroid[0]).attr("y", d=>d.centroid[1] + 4).attr("text-anchor","middle");
+
+    statusEl.textContent = "Rendered";
+    loader.textContent = "Done";
+    log(`Rendered ${countries.length} countries`);
+  }
+
+  // Tooltip overlay (very simple)
+  const tooltip = d3.select("body").append("div").style("position","absolute").style("pointer-events","none").style("background","#012b34").style("color","#d7f4fb").style("padding","6px 8px").style("border-radius","6px").style("font-size","12px").style("display","none").style("box-shadow","0 4px 12px rgba(0,0,0,0.3)");
+  function showTooltip(e,d){ tooltip.style("display","block").html(`<strong>${d.name}</strong><br/>Population (millions): ${d.population_millions ?? "unknown"}`).style("left",(e.pageX+12)+"px").style("top",(e.pageY+10)+"px"); }
+  function hideTooltip(){ tooltip.style("display","none"); }
+
+  // Download game state JSON (countries with population_millions)
+  function downloadStateJSON(){
+    const out = {
+      sourcePopulation: POP_CSV_URL,
+      sourceGeoJSON: WORLD_GEOJSON_URL,
+      year: yearSelect.value,
+      generatedAt: new Date().toISOString(),
+      countries: countries.map(c => ({
+        name: c.name,
+        id: c.id,
+        population_raw: c.population_raw ?? null,
+        population_millions: c.population_millions ?? null,
+        centroid_proj: c.centroid
+      }))
+    };
+    const blob = new Blob([JSON.stringify(out, null, 2)], {type: "application/json"});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = "worldbox_state.json";
+    document.body.appendChild(a); a.click(); a.remove();
+    URL.revokeObjectURL(url);
+  }
+
+  // When user changes year selection, re-attach population and re-render
+  yearSelect.addEventListener("change", ()=> {
+    attachPopulation(yearSelect.value);
+    renderPolygons();
+  });
+
+  // initial render
+  renderPolygons();
+
+  // expose some debug info
+  window._worldbox = { countries, popMap };
+
+  // finished
+  loader.textContent = "Ready";
+  statusEl.textContent = "Ready";
+  log("Ready — you can download the JSON state or SVG map.");
+})();
+</script>
+</body>
+</html>
